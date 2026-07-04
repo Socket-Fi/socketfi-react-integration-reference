@@ -1,0 +1,15 @@
+
+{
+    "scripts": {
+      "dev": "vite"
+    },
+    "dependencies": {
+      "@socketfi/react": "latest",
+      "@stellar/stellar-sdk": "^14.6.1",
+      "@vitejs/plugin-react": "^4.3.4",
+      "vite": "^6.0.7",
+      "react": "^19.0.0",
+      "react-dom": "^19.0.0"
+    },
+    "devDependencies": {}
+  }
