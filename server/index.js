@@ -4,8 +4,9 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const StellarSdk = require("@stellar/stellar-sdk");
+const { SocketFi } = require("@socketfi/server");
 
-const { rpc, xdr } = StellarSdk;
+const { rpc } = StellarSdk;
 
 const app = express();
 
@@ -26,23 +27,12 @@ if (!PAYMASTER_SECRET_KEY) {
   throw new Error("PAYMASTER_SECRET_KEY is required");
 }
 
+const socketfi = new SocketFi({
+  clientId: process.env.APP_CLIENT_ID,
+  secretKey: process.env.APP_SECRET_KEY,
+});
+
 const paymaster = StellarSdk.Keypair.fromSecret(PAYMASTER_SECRET_KEY);
-
-function buildInvokeTx({ sourceAccount, contractId, functionName, argsXdr }) {
-  const contract = new StellarSdk.Contract(contractId);
-
-  const args = (argsXdr || []).map((argXdr) =>
-    xdr.ScVal.fromXDR(argXdr, "base64")
-  );
-
-  return new StellarSdk.TransactionBuilder(sourceAccount, {
-    fee: StellarSdk.BASE_FEE,
-    networkPassphrase: NETWORK,
-  })
-    .addOperation(contract.call(functionName, ...args))
-    .setTimeout(60)
-    .build();
-}
 
 async function waitForTransaction(server, hash) {
   for (let i = 0; i < 30; i++) {
@@ -87,54 +77,24 @@ app.post("/submit-signed-transfer", async (req, res) => {
       });
     }
 
-    const server = new rpc.Server(RPC_URL);
-
-    const sourceForFunction = await server.getAccount(paymaster.publicKey());
-
-    const functionTx = buildInvokeTx({
-      sourceAccount: sourceForFunction,
-      contractId,
+    const prepared = await socketfi.prepareTransaction({
       functionName,
       argsXdr,
+      contractId,
+      paymasterPublicKey: paymaster.publicKey(),
+      signedAuthEntriesXdr,
     });
 
-    const invokeOp = functionTx.operations[0];
-
-    const signedAuthEntries = signedAuthEntriesXdr.map((entryXdr) =>
-      xdr.SorobanAuthorizationEntry.fromXDR(entryXdr, "base64")
+    const tx = new StellarSdk.Transaction(
+      prepared.transactionXdr,
+      prepared.networkPassphrase
     );
 
-    const freshSourceForSubmit = await server.getAccount(paymaster.publicKey());
+    tx.sign(paymaster);
 
-    const txWithSignedAuth = new StellarSdk.TransactionBuilder(
-      freshSourceForSubmit,
-      {
-        fee: StellarSdk.BASE_FEE,
-        networkPassphrase: NETWORK,
-      }
-    )
-      .addOperation(
-        StellarSdk.Operation.invokeHostFunction({
-          func: invokeOp.func,
-          auth: signedAuthEntries,
-        })
-      )
-      .setTimeout(60)
-      .build();
+    const server = new rpc.Server(RPC_URL);
 
-    const simulation = await server.simulateTransaction(txWithSignedAuth);
-
-    if (rpc.Api.isSimulationError(simulation)) {
-      throw new Error(simulation.error);
-    }
-
-    const assembled = rpc
-      .assembleTransaction(txWithSignedAuth, simulation)
-      .build();
-
-    assembled.sign(paymaster);
-
-    const submitted = await server.sendTransaction(assembled);
+    const submitted = await server.sendTransaction(tx);
 
     if (submitted.status === "ERROR") {
       return res.status(400).json({
