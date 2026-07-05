@@ -464,6 +464,9 @@ You can easily extend this project to:
 - **React SDK**  
   https://www.npmjs.com/package/@socketfi/react
 
+- **Server SDK**  
+  https://www.npmjs.com/package/@socketfi/server
+
 - **Website**  
   https://socket.fi
 
