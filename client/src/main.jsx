@@ -8,7 +8,7 @@ createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <SocketFiProvider
       config={{
-        clientId: "sf_client_live_1blpukbhctwu5je45zlndqeed5pr",
+        clientId: "sf_client_live_hcqqvsts7knbmysprqcbh5y5zls5",
         guardians: ["GBYV5SISEH5DNG2U56E6Y6DPT7C3WSR6NHO6QHT27ECWYRX66HQTAHHP"],
         network: "TESTNET",
         brand: {

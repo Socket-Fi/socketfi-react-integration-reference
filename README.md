@@ -9,9 +9,9 @@
 
 A production-ready reference application demonstrating how to integrate the **SocketFi Embedded Smart Account** into a React application.
 
-This repository showcases the complete authentication and token transfer experience using the **SocketFi React SDK**, including hosted authentication, hosted transaction approval, and Soroban transaction execution.
+This repository showcases the complete end-to-end integration of the **SocketFi React SDK** and **SocketFi Server SDK**, including hosted authentication, hosted transaction approval, backend transaction preparation, Paymaster fee sponsorship, and Soroban transaction execution.
 
-Whether you're building a DeFi application, marketplace, game, NFT platform, or consumer application, this project provides a simple starting point for integrating embedded smart wallets into your React application.
+Whether you're building a DeFi application, marketplace, game, NFT platform, AI agent, fintech product, or consumer application, this project provides a production-ready foundation for integrating embedded smart wallets into your React applications.
 
 ---
 
@@ -19,12 +19,13 @@ Whether you're building a DeFi application, marketplace, game, NFT platform, or 
 
 - 🔐 Passkey-based authentication
 - 👛 Embedded Soroban smart wallet
-- 💸 XLM transfers
-- 🪙 Custom Stellar token transfers
+- 💸 Native XLM transfers
+- 🪙 Stellar Asset Contract token transfers
 - ✅ Hosted transaction approval
 - ⚡ Automatic transaction submission
-- 🏗 Backend transaction submission example
-- 💰 Server-side fee sponsorship (Paymaster)
+- 🧩 Backend transaction preparation using the SocketFi Server SDK
+- 💰 Server-side Paymaster fee sponsorship
+- 🔒 Backend-controlled transaction validation
 - ⚛️ React + TypeScript
 - 🚀 Soroban Testnet ready
 
@@ -49,8 +50,10 @@ This reference application demonstrates how to:
 - Authenticate users using SocketFi Passkeys
 - Create embedded smart wallets
 - Transfer native XLM
-- Submit transactions using SocketFi
-- Sign a transactions and submit using your own backend
+- Transfer Stellar Asset Contract tokens
+- Submit transactions directly using SocketFi
+- Submit transactions through your own backend Paymaster
+- Prepare Soroban transactions using the SocketFi Server SDK
 
 ---
 
@@ -122,7 +125,7 @@ User
 React App
    │
    ▼
-SocketFi SDK
+SocketFi React SDK
    │
    ▼
 Hosted Approval
@@ -131,7 +134,13 @@ Hosted Approval
 Signed Authorization
    │
    ▼
-Backend
+Application Backend
+   │
+   ▼
+SocketFi Server SDK
+   │
+   ▼
+Prepare Transaction
    │
    ▼
 Paymaster Signature
@@ -148,16 +157,17 @@ Stellar Network
 Frontend
 
 - Authenticate user
-- Request approval
-- Receive signed authorization
+- Request transaction approval
+- Receive signed authorization entries
 
 Backend
 
-- Assemble transaction
-- Sign using Paymaster
-- Submit transaction
+- Validate transaction parameters
+- Prepare the transaction using `socketfi.prepareTransaction()`
+- Sign the prepared transaction using the Paymaster
+- Submit the transaction to Stellar RPC
 
-This approach keeps your Paymaster secret securely on your backend.
+This approach keeps your Paymaster secret securely on your backend while allowing your backend to prepare and validate the transaction before sponsoring and submitting it.
 
 ---
 
@@ -213,14 +223,24 @@ A preconfigured `.env` file is included for convenience and is ready to use with
 If you need to customize the configuration (for example, to use your own SocketFi application or backend), update the following values:
 
 ```env
+# React Application
+
 VITE_CLIENT_ID=YOUR_SOCKETFI_CLIENT_ID
-
 VITE_NETWORK=TESTNET
-
 VITE_SERVER_URL=http://localhost:4000
+
+# Backend
+
+APP_CLIENT_ID=YOUR_SOCKETFI_CLIENT_ID
+APP_SECRET_KEY=YOUR_SOCKETFI_SECRET_KEY
+
+PAYMASTER_SECRET_KEY=YOUR_PAYMASTER_SECRET_KEY
+
+STELLAR_NETWORK=TESTNET
+STELLAR_RPC_URL=https://soroban-testnet.stellar.org
 ```
 
-To create your own **Client ID**, create a new application in the **SocketFi Developer Console**:
+To create your own **Client ID** and **Secret Key**, create a new application in the **SocketFi Developer Console**:
 
 https://console.socket.fi
 
@@ -270,7 +290,9 @@ npm run dev
 
 # SDK Overview
 
-The application uses the official SocketFi React SDK.
+This reference application uses both SocketFi's React and Server SDKs.
+
+### React SDK
 
 Authentication:
 
@@ -278,19 +300,31 @@ Authentication:
 const session = await socketfi.authenticate();
 ```
 
-Sign transaction only:
+Sign transaction authorization:
 
 ```ts
-await socketfi.signTx(...)
+await socketfi.signTx(...);
 ```
 
 Sign and submit:
 
 ```ts
-await socketfi.signAndSubmitTx(...)
+await socketfi.signAndSubmitTx(...);
 ```
 
----
+### Server SDK
+
+Validate and prepare a transaction for Paymaster signing:
+
+```ts
+const prepared = await socketfi.prepareTransaction({
+  contractId,
+  functionName,
+  argsXdr,
+  signedAuthEntriesXdr,
+  paymasterPublicKey,
+});
+```
 
 # Authentication
 
@@ -333,11 +367,49 @@ When using `signAndSubmitTx()`, transaction fees are sponsored automatically usi
 
 When using `signTx()`, your backend is responsible for:
 
-- Building the transaction
-- Signing with the Paymaster
-- Submitting the transaction
+- Receiving the transaction parameters and signed authorization entries
+- Preparing the transaction using `socketfi.prepareTransaction()`
+- Signing the prepared transaction with the Paymaster
+- Submitting the transaction to Stellar RPC
 
-This keeps your Paymaster secret securely on your server.
+This keeps your Paymaster secret securely on your backend while allowing your application to validate and control every sponsored transaction.
+
+---
+
+# Backend Transaction Preparation
+
+The backend uses the SocketFi Server SDK to validate and prepare the transaction before signing it with the Paymaster.
+
+By reconstructing the transaction from the original contract invocation parameters and the user-signed authorization entries, the SDK ensures the authorization is applied to the intended transaction before it is sponsored and submitted.
+
+```ts
+const prepared = await socketfi.prepareTransaction({
+  contractId,
+  functionName,
+  argsXdr,
+  signedAuthEntriesXdr,
+  paymasterPublicKey: paymaster.publicKey(),
+});
+
+const tx = new StellarSdk.Transaction(
+  prepared.transactionXdr,
+  prepared.networkPassphrase
+);
+
+tx.sign(paymaster);
+
+const server = new rpc.Server(RPC_URL);
+
+await server.sendTransaction(tx);
+```
+
+The Server SDK automatically:
+
+- Builds the Soroban contract invocation
+- Injects the user-signed authorization entries
+- Simulates the transaction
+- Assembles the transaction
+- Returns a ready-to-sign transaction XDR
 
 ---
 
@@ -345,10 +417,10 @@ This keeps your Paymaster secret securely on your server.
 
 SocketFi supports two workflows to accommodate different application architectures.
 
-| Workflow            | Backend Required | Recommended For                                   |
-| ------------------- | ---------------- | ------------------------------------------------- |
-| `signAndSubmitTx()` | No               | Most applications                                 |
-| `signTx()`          | Yes              | Production applications requiring backend control |
+| Workflow            | Backend Required | Recommended For                                                                                                                     |
+| ------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `signAndSubmitTx()` | No               | Most applications                                                                                                                   |
+| `signTx()`          | Yes              | Production applications that require backend-controlled transaction preparation, validation, Paymaster sponsorship, and submission. |
 
 ---
 
